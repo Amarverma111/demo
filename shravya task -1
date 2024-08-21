@@ -1,0 +1,107 @@
+import boto3
+import json
+import logging
+from decimal import Decimal
+
+# Configure logging
+logging.basicConfig(level=logging.INFO)
+
+def lambda_handler(event, context):
+    logging.info("Lambda function started...")
+    
+    try:
+        # Fetch table data
+        table_list =['Transaction_table']
+        # ------ in table list pass both the table name with comma seprate 
+        for table_item in table_list:
+            
+            data = get_table_data(table_item)
+            # Convert data to JSON
+            json_data = json.dumps(data, default=decimal_to_float)
+        
+            # Upload JSON data to S3
+            upload_to_s3(json_data)
+        
+        # Return success response
+        return {
+            'statusCode': 200,
+            'body': json.dumps({'message': 'Data processed and uploaded successfully.'})
+        }
+    
+    except Exception as e:
+        logging.error(f"Error processing data: {e}")
+        return {
+            'statusCode': 500,
+            'body': json.dumps({'message': 'Failed to process data.', 'error': str(e)})
+        }
+
+def get_table_data(table_name):
+    try:
+        # Create a DynamoDB resource
+        dynamodb = boto3.resource('dynamodb')
+        
+        # Reference the DynamoDB table
+        table = dynamodb.Table(table_name)
+        
+        # Initialize an empty list to store items
+        all_items = []
+        
+        # Scan the table and handle pagination
+        scan_kwargs = {}
+        while True:
+            response = table.scan(**scan_kwargs)
+            all_items.extend(response.get('Items', []))
+            
+            # Check if there are more pages
+            if 'LastEvaluatedKey' in response:
+                scan_kwargs['ExclusiveStartKey'] = response['LastEvaluatedKey']
+            else:
+                break
+        
+        logging.info(f"Fetched {len(all_items)} items from DynamoDB.")
+        
+        # Return the items
+        return all_items
+    
+    except Exception as e:
+        logging.error(f"Error fetching data from DynamoDB: {e}")
+        raise
+
+def decimal_to_float(obj):
+    """Convert Decimal objects to float."""
+    if isinstance(obj, Decimal):
+        return float(obj)
+    raise TypeError(f"Object of type {obj.__class__.__name__} is not JSON serializable")
+
+def upload_to_s3(json_data):
+    try:
+        # Create an S3 client
+        s3_client = boto3.client('s3')
+        bucket_name = 'artest1'
+        object_key = 'transaction_data.json' 
+        # ---------object_key pass the file name
+        # ------bucket_name  pass the bucket name which is mention in ticket
+        
+        # Upload the JSON file to S3
+        s3_client.put_object(
+            Bucket=bucket_name,
+            Key=object_key,
+            Body=json_data,
+            ContentType='application/json'
+        )
+        
+        logging.info(f"Successfully uploaded JSON to s3://{bucket_name}/{object_key}.")
+    
+    except Exception as e:
+        logging.error(f"Error uploading JSON to S3: {e}")
+        raise
+
+
+
+
+
+
+
+
+
+
